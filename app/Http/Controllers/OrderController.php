@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Jobs\MatchOrders;
 use App\Models\Asset;
+use App\Models\Order;
 use App\Models\User;
 use Exception;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ class OrderController extends Controller
 {
     public function index(Request $request)
     {
-        $query = $request->user()->orders()->where('status', 'open');
+        $query = Order::where('status', 'open');
 
         if ($request->has('symbol')) {
             $query->where('symbol', $request->symbol);
