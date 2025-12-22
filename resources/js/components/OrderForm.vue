@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import axios from 'axios';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
     balance: number;
@@ -20,12 +20,55 @@ const loading = ref(false);
 const error = ref('');
 const success = ref('');
 
+// Computed Available Balance based on Side
+const availableBalance = computed(() => {
+    if (form.value.side === 'buy') {
+        return props.balance;
+    } else {
+        const asset = props.assets.find((a) => a.symbol === form.value.symbol);
+        return asset ? parseFloat(asset.amount) : 0;
+    }
+});
+
 const total = computed(() => {
     const p = parseFloat(form.value.price);
     const a = parseFloat(form.value.amount);
     if (!p || !a) return 0;
     return (p * a).toFixed(2);
 });
+
+// Watch for side change to reset amounts if needed or just clear error
+watch(
+    () => form.value.side,
+    () => {
+        error.value = '';
+        success.value = '';
+    },
+);
+
+function setPercentage(percent: number) {
+    if (!form.value.price) {
+        // If price is not set, we can't calculate amount for BUY (since we need Total Cost <= Balance)
+        // For SELL, we can calculate simply based on asset amount.
+        if (form.value.side === 'sell') {
+            form.value.amount = (availableBalance.value * percent).toFixed(8);
+        } else {
+            error.value = 'Please set a price first to calculate Buy amount.';
+        }
+        return;
+    }
+
+    if (form.value.side === 'buy') {
+        // Buy: Total Cost = Price * Amount <= Balance
+        // Amount = Balance / Price
+        // Adjusted for safe margin? No, just raw calculation.
+        const maxAmount = availableBalance.value / parseFloat(form.value.price);
+        form.value.amount = (maxAmount * percent).toFixed(8);
+    } else {
+        // Sell: Amount <= Asset Balance
+        form.value.amount = (availableBalance.value * percent).toFixed(8);
+    }
+}
 
 async function submit() {
     loading.value = true;
@@ -45,7 +88,7 @@ async function submit() {
         success.value = 'Order placed successfully!';
 
         // Reset form but keep symbol
-        form.value.price = '';
+        // form.value.price = ''; // Keep price for rapid trading? Usually better to keep.
         form.value.amount = '';
     } catch (e: any) {
         error.value = e.response?.data?.message || 'Failed to place order.';
@@ -57,135 +100,154 @@ async function submit() {
 
 <template>
     <div
-        class="rounded-lg border border-gray-100 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+        class="h-full rounded-xl border border-gray-100 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
     >
-        <h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-            New Order
-        </h3>
+        <div class="mb-5 flex items-center justify-between">
+            <h3 class="font-semibold text-gray-900 dark:text-white">
+                Place Order
+            </h3>
+            <div class="text-xs text-gray-400">
+                Avail:
+                <span
+                    class="font-mono font-medium text-gray-700 dark:text-gray-200"
+                >
+                    {{
+                        form.side === 'buy'
+                            ? '$' + availableBalance.toFixed(2)
+                            : availableBalance.toFixed(8) + ' ' + form.symbol
+                    }}
+                </span>
+            </div>
+        </div>
 
         <div
             v-if="error"
-            class="mb-4 rounded bg-red-50 p-2 text-sm text-red-600"
+            class="mb-4 rounded-md bg-red-50 p-2 text-xs text-red-600"
         >
             {{ error }}
         </div>
         <div
             v-if="success"
-            class="mb-4 rounded bg-green-50 p-2 text-sm text-green-600"
+            class="mb-4 rounded-md bg-green-50 p-2 text-xs text-green-600"
         >
             {{ success }}
         </div>
 
-        <form @submit.prevent="submit" class="space-y-4">
-            <!-- Symbol Selection (Hardcoded for MVP) -->
-            <div>
-                <label
-                    class="block text-sm font-medium text-gray-700 dark:text-zinc-300"
-                    >Asset</label
+        <form @submit.prevent="submit" class="space-y-5">
+            <!-- Buy/Sell Tabs -->
+            <div class="flex rounded-lg bg-gray-100 p-1 dark:bg-zinc-800">
+                <button
+                    type="button"
+                    @click="form.side = 'buy'"
+                    class="flex-1 rounded-md py-1.5 text-sm font-medium transition-all"
+                    :class="{
+                        'bg-green-600 text-white shadow-sm':
+                            form.side === 'buy',
+                        'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200':
+                            form.side !== 'buy',
+                    }"
                 >
-                <select
-                    v-model="form.symbol"
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                    Buy
+                </button>
+                <button
+                    type="button"
+                    @click="form.side = 'sell'"
+                    class="flex-1 rounded-md py-1.5 text-sm font-medium transition-all"
+                    :class="{
+                        'bg-red-600 text-white shadow-sm': form.side === 'sell',
+                        'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200':
+                            form.side !== 'sell',
+                    }"
                 >
-                    <option value="BTC">Bitcoin (BTC)</option>
-                    <option value="ETH">Ethereum (ETH)</option>
-                </select>
+                    Sell
+                </button>
             </div>
 
-            <!-- Side Toggle -->
-            <div>
-                <label
-                    class="mb-1 block text-sm font-medium text-gray-700 dark:text-zinc-300"
-                    >Side</label
-                >
-                <div class="flex rounded-md shadow-sm">
-                    <button
-                        type="button"
-                        @click="form.side = 'buy'"
-                        :class="{
-                            'bg-green-600 text-white': form.side === 'buy',
-                            'bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300':
-                                form.side !== 'buy',
-                        }"
-                        class="flex-1 rounded-l-md border border-gray-300 px-4 py-2 text-sm font-medium focus:z-10 focus:ring-2 focus:ring-indigo-500 dark:border-zinc-700"
+            <!-- Inputs -->
+            <div class="space-y-4">
+                <div>
+                    <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-zinc-400"
+                        >Asset</label
                     >
-                        Buy
-                    </button>
-                    <button
-                        type="button"
-                        @click="form.side = 'sell'"
-                        :class="{
-                            'bg-red-600 text-white': form.side === 'sell',
-                            'bg-gray-100 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300':
-                                form.side !== 'sell',
-                        }"
-                        class="flex-1 rounded-r-md border border-l-0 border-gray-300 px-4 py-2 text-sm font-medium focus:z-10 focus:ring-2 focus:ring-indigo-500 dark:border-zinc-700"
+                    <select
+                        v-model="form.symbol"
+                        class="block w-full rounded-lg border-gray-200 bg-gray-50 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                     >
-                        Sell
-                    </button>
+                        <option value="BTC">Bitcoin (BTC)</option>
+                        <option value="ETH">Ethereum (ETH)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-zinc-400"
+                        >Price (USD)</label
+                    >
+                    <div class="relative rounded-md shadow-sm">
+                        <input
+                            v-model="form.price"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            class="block w-full rounded-lg border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                        />
+                        <div
+                            class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3"
+                        >
+                            <span class="text-gray-400 sm:text-sm">$</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label
+                        class="mb-1 block text-xs font-medium text-gray-500 dark:text-zinc-400"
+                        >Amount</label
+                    >
+                    <div class="relative rounded-md shadow-sm">
+                        <input
+                            v-model="form.amount"
+                            type="number"
+                            step="0.00000001"
+                            min="0"
+                            placeholder="0.00000000"
+                            class="block w-full rounded-lg border-gray-200 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+                        />
+                        <div
+                            class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3"
+                        >
+                            <span class="text-gray-400 sm:text-sm">{{
+                                form.symbol
+                            }}</span>
+                        </div>
+                    </div>
+                    <!-- Percentage Buttons -->
+                    <div class="mt-2 grid grid-cols-4 gap-2">
+                        <button
+                            v-for="pct in [0.25, 0.5, 0.75, 1]"
+                            :key="pct"
+                            type="button"
+                            @click="setPercentage(pct)"
+                            class="rounded border border-gray-200 bg-white py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-gray-300 dark:hover:bg-zinc-700"
+                        >
+                            {{ pct * 100 }}%
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Price -->
-            <div>
-                <label
-                    class="block text-sm font-medium text-gray-700 dark:text-zinc-300"
-                    >Price (USD)</label
-                >
-                <input
-                    v-model="form.price"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800"
-                    placeholder="0.00"
-                />
-            </div>
-
-            <!-- Amount -->
-            <div>
-                <label
-                    class="block text-sm font-medium text-gray-700 dark:text-zinc-300"
-                    >Amount</label
-                >
-                <input
-                    v-model="form.amount"
-                    type="number"
-                    step="0.00000001"
-                    min="0"
-                    required
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm dark:border-zinc-700 dark:bg-zinc-800"
-                    placeholder="0.00"
-                />
-            </div>
-
-            <!-- Total -->
-            <div class="border-t border-gray-100 pt-2 dark:border-zinc-800">
-                <div class="flex justify-between text-sm">
-                    <span class="text-gray-500">Total:</span>
-                    <span class="font-medium text-gray-900 dark:text-white"
+            <!-- Summary -->
+            <div class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-zinc-800/50">
+                <div class="flex justify-between">
+                    <span class="text-gray-500">Est. Total</span>
+                    <span class="font-semibold text-gray-900 dark:text-white"
                         >${{ total }}</span
                     >
                 </div>
                 <div class="mt-1 flex justify-between text-xs text-gray-400">
-                    <span>Avail Balance:</span>
-                    <span>
-                        <span v-if="form.side === 'buy'"
-                            >${{ props.balance }}</span
-                        >
-                        <span v-else
-                            >{{
-                                props.assets.find(
-                                    (a) => a.symbol === form.symbol,
-                                )?.amount || 0
-                            }}
-                            {{ form.symbol }}</span
-                        >
-                    </span>
-                </div>
-                <div class="mt-1 flex justify-between text-xs text-gray-400">
-                    <span>Est. Fee (1.5%):</span>
+                    <span>Fee (1.5%)</span>
                     <span>${{ (parseFloat(total) * 0.015).toFixed(2) }}</span>
                 </div>
             </div>
@@ -194,10 +256,12 @@ async function submit() {
                 type="submit"
                 :disabled="loading"
                 :class="{
-                    'bg-green-600 hover:bg-green-700': form.side === 'buy',
-                    'bg-red-600 hover:bg-red-700': form.side === 'sell',
+                    'bg-green-600 hover:bg-green-700 focus:ring-green-500':
+                        form.side === 'buy',
+                    'bg-red-600 hover:bg-red-700 focus:ring-red-500':
+                        form.side === 'sell',
                 }"
-                class="flex w-full justify-center rounded-md border border-transparent px-4 py-2 text-sm font-medium text-white shadow-sm focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none disabled:opacity-50"
+                class="w-full rounded-lg py-2.5 text-sm font-bold text-white shadow-sm transition-all focus:ring-2 focus:ring-offset-2 disabled:opacity-50"
             >
                 <span v-if="loading">Processing...</span>
                 <span v-else>{{
