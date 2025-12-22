@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\OrderStatus;
 use App\Http\Requests\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
@@ -20,7 +21,7 @@ class OrderController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Order::where('status', 'open');
+        $query = Order::where('status', OrderStatus::Open);
 
         if ($request->has('symbol')) {
             $query->where('symbol', $request->symbol);

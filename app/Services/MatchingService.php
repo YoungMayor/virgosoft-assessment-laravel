@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OrderStatus;
 use App\Events\OrderMatched;
 use App\Models\Asset;
 use App\Models\Order;
@@ -38,7 +39,7 @@ class MatchingService
 
     protected function canOrderBeMatched(Order $order): bool
     {
-        return $order->status === 'open' && $order->amount > 0;
+        return $order->status === OrderStatus::Open && $order->amount > 0;
     }
 
     protected function findMatchingOrders(Order $order)
@@ -47,7 +48,7 @@ class MatchingService
 
         return Order::where('symbol', $order->symbol)
             ->where('side', $isBuy ? 'sell' : 'buy')
-            ->where('status', 'open')
+            ->where('status', OrderStatus::Open)
             ->orderBy('price', $isBuy ? 'asc' : 'desc')
             ->orderBy('created_at', 'asc')
             ->take(50)
@@ -86,7 +87,7 @@ class MatchingService
 
     protected function canExecuteTrade(Order $order, Order $match): bool
     {
-        return $order->status === 'open' && $match->status === 'open';
+        return $order->status === OrderStatus::Open && $match->status === OrderStatus::Open;
     }
 
     protected function executeTrade(Order $order, Order $match): void
@@ -128,10 +129,10 @@ class MatchingService
         $match->amount -= $amount;
 
         if ($order->amount <= 0) {
-            $order->status = 'filled';
+            $order->status = OrderStatus::Filled;
         }
         if ($match->amount <= 0) {
-            $match->status = 'filled';
+            $match->status = OrderStatus::Filled;
         }
 
         $order->save();

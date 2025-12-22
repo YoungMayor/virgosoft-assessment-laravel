@@ -35,7 +35,7 @@ test('full match execution executes trade and updates balances correctly', funct
     // Check Buyer State
     $buyer->refresh();
     expect($buyer->balance)->toEqual(900); // 1000 - 100 locked
-    expect($buyer->orders()->first()->status)->toBe('open');
+    expect($buyer->orders()->first()->status)->toBe(App\Enums\OrderStatus::Open);
 
     // Seller places Sell Order
     $response = $this->actingAs($seller)->postJson('/api/orders', [
@@ -87,6 +87,13 @@ test('full match execution executes trade and updates balances correctly', funct
     // Order Status
     $this->assertDatabaseHas('orders', ['id' => $buyer->orders()->first()->id, 'status' => 'filled']);
     $this->assertDatabaseHas('orders', ['id' => $sellerOrder->id, 'status' => 'filled']);
+
+    // Verify Enum Casting
+    $buyerOrder = $buyer->orders()->first();
+    $sellerOrder = $sellerOrder->fresh();
+
+    expect($buyerOrder->status)->toBe(App\Enums\OrderStatus::Filled);
+    expect($sellerOrder->status)->toBe(App\Enums\OrderStatus::Filled);
 
     // Events
     Event::assertDispatched(OrderMatched::class);
