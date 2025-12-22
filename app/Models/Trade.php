@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Trade extends Model
 {
@@ -26,12 +27,12 @@ class Trade extends Model
         ];
     }
 
-    public function buyer(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function buyer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'buyer_id');
     }
 
-    public function seller(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function seller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'seller_id');
     }

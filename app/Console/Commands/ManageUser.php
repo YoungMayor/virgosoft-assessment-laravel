@@ -2,7 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Asset;
+use App\Models\User;
 use Illuminate\Console\Command;
+
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
 
 class ManageUser extends Command
 {
@@ -28,10 +33,10 @@ class ManageUser extends Command
         $search = $this->argument('search');
 
         if (! $search) {
-            $search = \Laravel\Prompts\text('Enter User ID or Email to manage:');
+            $search = text('Enter User ID or Email to manage:');
         }
 
-        $user = \App\Models\User::where('id', $search)
+        $user = User::where('id', $search)
             ->orWhere('email', $search)
             ->first();
 
@@ -46,7 +51,7 @@ class ManageUser extends Command
         while (true) {
             $user->refresh();
 
-            $choice = \Laravel\Prompts\select(
+            $choice = select(
                 label: 'What would you like to do?',
                 options: [
                     'view' => 'View Balances',
@@ -69,7 +74,7 @@ class ManageUser extends Command
                     ]
                 );
             } elseif ($choice === 'usd') {
-                $amount = \Laravel\Prompts\text(
+                $amount = text(
                     label: 'Enter new USD Balance (Current: '.$user->balance.')',
                     placeholder: '1000',
                     validate: fn ($value) => is_numeric($value) ? null : 'Must be a number'
@@ -79,10 +84,10 @@ class ManageUser extends Command
                 $user->save();
                 $this->info("USD Balance updated to {$amount}");
             } elseif ($choice === 'asset') {
-                $symbol = strtoupper(\Laravel\Prompts\text('Asset Symbol (e.g. BTC):'));
-                $amount = \Laravel\Prompts\text('New Amount:', validate: fn ($value) => is_numeric($value) ? null : 'Must be a number');
+                $symbol = strtoupper(text('Asset Symbol (e.g. BTC):'));
+                $amount = text('New Amount:', validate: fn ($value) => is_numeric($value) ? null : 'Must be a number');
 
-                $asset = \App\Models\Asset::firstOrCreate(
+                $asset = Asset::firstOrCreate(
                     ['user_id' => $user->id, 'symbol' => $symbol],
                     ['amount' => 0, 'locked_amount' => 0]
                 );

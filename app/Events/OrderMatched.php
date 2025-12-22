@@ -2,10 +2,11 @@
 
 namespace App\Events;
 
+use App\Models\Order;
+use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
-//
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
@@ -19,8 +20,8 @@ class OrderMatched implements ShouldBroadcast
      * Create a new event instance.
      */
     public function __construct(
-        public \App\Models\Order $order,
-        public \App\Models\Order $match,
+        public Order $order,
+        public Order $match,
         public float $amount,
         public float $price
     ) {}
@@ -28,7 +29,7 @@ class OrderMatched implements ShouldBroadcast
     /**
      * Get the channels the event should broadcast on.
      *
-     * @return array<int, \Illuminate\Broadcasting\Channel>
+     * @return array<int, Channel>
      */
     public function broadcastOn(): array
     {

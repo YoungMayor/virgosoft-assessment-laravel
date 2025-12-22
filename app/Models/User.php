@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -50,22 +51,22 @@ class User extends Authenticatable
         ];
     }
 
-    public function assets(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function assets(): HasMany
     {
         return $this->hasMany(Asset::class);
     }
 
-    public function orders(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
     }
 
-    public function tradesAsBuyer(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function tradesAsBuyer(): HasMany
     {
         return $this->hasMany(Trade::class, 'buyer_id');
     }
 
-    public function tradesAsSeller(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function tradesAsSeller(): HasMany
     {
         return $this->hasMany(Trade::class, 'seller_id');
     }

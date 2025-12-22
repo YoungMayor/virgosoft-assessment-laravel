@@ -2,9 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\MatchOrders;
+use App\Models\Asset;
+use App\Models\User;
+use Exception;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
 class OrderController extends Controller
 {
-    public function index(\Illuminate\Http\Request $request)
+    public function index(Request $request)
     {
         $query = $request->user()->orders()->where('status', 'open');
 
@@ -15,7 +22,7 @@ class OrderController extends Controller
         return response()->json($query->orderByDesc('created_at')->get());
     }
 
-    public function store(\Illuminate\Http\Request $request)
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'symbol' => 'required|string',
@@ -29,26 +36,26 @@ class OrderController extends Controller
         $order = null;
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($user, $validated, $totalCost, &$order) {
+            DB::transaction(function () use ($user, $validated, $totalCost, &$order) {
                 // Refresh user for lock
-                $user = \App\Models\User::lockForUpdate()->find($user->id);
+                $user = User::lockForUpdate()->find($user->id);
 
                 if ($validated['side'] === 'buy') {
                     if ($user->balance < $totalCost) {
-                        throw new \Exception('Insufficient USD balance.');
+                        throw new Exception('Insufficient USD balance.');
                     }
 
                     $user->balance -= $totalCost;
                     $user->save();
                 } else {
                     // Sell Order
-                    $asset = \App\Models\Asset::lockForUpdate()
+                    $asset = Asset::lockForUpdate()
                         ->where('user_id', $user->id)
                         ->where('symbol', $validated['symbol'])
                         ->first();
 
                     if (! $asset || $asset->amount < $validated['amount']) {
-                        throw new \Exception('Insufficient asset balance.');
+                        throw new Exception('Insufficient asset balance.');
                     }
 
                     $asset->amount -= $validated['amount'];
@@ -64,18 +71,18 @@ class OrderController extends Controller
                     'status' => 'open',
                 ]);
             });
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['message' => $e->getMessage()], 400);
         }
 
         // Trigger matching synchronously as per simple requirement, or dispatch job.
         // For "Real-time" and "Atomic", sync is fine for MVP.
-        \App\Jobs\MatchOrders::dispatch($order);
+        MatchOrders::dispatch($order);
 
         return response()->json($order, 201);
     }
 
-    public function destroy(string $id, \Illuminate\Http\Request $request)
+    public function destroy(string $id, Request $request)
     {
         $order = $request->user()->orders()->where('id', $id)->firstOrFail();
 
@@ -83,8 +90,8 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order is not open.'], 400);
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($order) {
-            $user = \App\Models\User::lockForUpdate()->find($order->user_id);
+        DB::transaction(function () use ($order) {
+            $user = User::lockForUpdate()->find($order->user_id);
             $order->refresh();
             if ($order->status !== 'open') {
                 return;
@@ -95,7 +102,7 @@ class OrderController extends Controller
                 $user->balance += $cost;
                 $user->save();
             } else {
-                $asset = \App\Models\Asset::lockForUpdate()
+                $asset = Asset::lockForUpdate()
                     ->where('user_id', $user->id)
                     ->where('symbol', $order->symbol)
                     ->first();
