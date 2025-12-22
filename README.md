@@ -83,4 +83,24 @@ composer run test
 - **Global Exception Handling**: Centralized error management for consistent API responses (`ClientException`, `ServerException`).
 - **Standardized Controllers**: Slim controllers (`OrderController`) delegating business logic to services.
 
+## 📸 Screenshots
+
+### Dashboard (Light Mode - Buyer)
+
+![Buyer Dashboard](screenshots/lightmode-buyer-account.png)
+
+### Dashboard (Dark Mode - Seller)
+
+![Seller Dashboard](screenshots/darkmode-seller-account.png)
+
+### Authentication
+
+|                   Login                   |                      Registration                       |
+| :---------------------------------------: | :-----------------------------------------------------: |
+| ![Login Page](screenshots/login-page.png) | ![Registration Page](screenshots/registration-page.png) |
+
+### Settings
+
+![Settings Page](screenshots/settings-page.png)
+
 ---

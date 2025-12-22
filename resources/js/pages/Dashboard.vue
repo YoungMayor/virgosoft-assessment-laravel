@@ -35,7 +35,7 @@ async function fetchProfile() {
 async function fetchOrders() {
     try {
         const res = await axios.get('/api/orders?symbol=BTC');
-        orders.value = res.data;
+        orders.value = res.data.data;
     } catch (e) {
         console.error(e);
     }
