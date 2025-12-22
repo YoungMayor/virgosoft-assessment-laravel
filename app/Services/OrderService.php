@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\ClientException;
 use App\Jobs\MatchOrders;
 use App\Models\Asset;
 use App\Models\Order;
@@ -33,7 +34,7 @@ class OrderService
 
                 if ($side === 'buy') {
                     if ($user->balance < $totalCost) {
-                        throw new Exception('Insufficient USD balance.');
+                        throw new ClientException('Insufficient USD balance.');
                     }
 
                     $user->balance -= $totalCost;
@@ -46,7 +47,7 @@ class OrderService
                         ->first();
 
                     if (! $asset || $asset->amount < $amount) {
-                        throw new Exception('Insufficient asset balance.');
+                        throw new ClientException('Insufficient asset balance.');
                     }
 
                     $asset->amount -= $amount;
@@ -83,7 +84,7 @@ class OrderService
         $order = $user->orders()->where('id', $orderId)->firstOrFail();
 
         if ($order->status !== 'open') {
-            throw new Exception('Order is not open.');
+            throw new ClientException('Order is not open.');
         }
 
         DB::transaction(function () use ($order, $user) {

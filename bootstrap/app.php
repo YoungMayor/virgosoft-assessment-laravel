@@ -1,11 +1,15 @@
 <?php
 
+use App\Exceptions\ClientException;
+use App\Exceptions\ServerException;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -26,5 +30,16 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (ClientException $e, Request $request) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], $e->getCode() ?: Response::HTTP_BAD_REQUEST);
+        });
+
+        $exceptions->render(function (ServerException $e, Request $request) {
+            return response()->json([
+                'message' => 'Internal Server Error',
+                'debug_message' => config('app.debug') ? $e->getMessage() : null,
+            ], $e->getCode() ?: Response::HTTP_INTERNAL_SERVER_ERROR);
+        });
     })->create();

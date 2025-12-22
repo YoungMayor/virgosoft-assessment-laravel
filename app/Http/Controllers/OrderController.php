@@ -6,7 +6,6 @@ use App\Http\Requests\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Services\OrderService;
-use Exception;
 use Illuminate\Http\Request;
 
 class OrderController extends Controller
@@ -37,13 +36,9 @@ class OrderController extends Controller
      */
     public function store(StoreOrderRequest $request)
     {
-        try {
-            $order = $this->orderService->createOrder($request->user(), $request->validated());
+        $order = $this->orderService->createOrder($request->user(), $request->validated());
 
-            return new OrderResource($order);
-        } catch (Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 400);
-        }
+        return new OrderResource($order);
     }
 
     /**
@@ -53,12 +48,8 @@ class OrderController extends Controller
      */
     public function destroy(string $id, Request $request)
     {
-        try {
-            $this->orderService->cancelOrder($request->user(), (int) $id);
+        $this->orderService->cancelOrder($request->user(), (int) $id);
 
-            return response()->json(['message' => 'Order cancelled.']);
-        } catch (Exception $e) {
-            return response()->json(['message' => $e->getMessage()], 400);
-        }
+        return response()->json(['message' => 'Order cancelled.']);
     }
 }
