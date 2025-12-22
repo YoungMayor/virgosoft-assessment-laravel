@@ -1,16 +1,11 @@
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
     orders: any[];
     currentUserId?: number;
     showCancel?: boolean;
 }>();
 
 const emit = defineEmits(['cancel']);
-
-// Helper to format date
-const formatDate = (date: string) => {
-    return new Date(date).toLocaleString();
-};
 </script>
 
 <template>

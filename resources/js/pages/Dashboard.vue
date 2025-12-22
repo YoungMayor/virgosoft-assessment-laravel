@@ -46,7 +46,7 @@ async function cancelOrder(id: number) {
     try {
         await axios.post(`/api/orders/${id}/cancel`);
         refreshData();
-    } catch (e) {
+    } catch {
         alert('Failed to cancel order');
     }
 }
