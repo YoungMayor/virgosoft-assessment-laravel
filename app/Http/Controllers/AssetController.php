@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\AssetResource;
 use Illuminate\Http\Request;
 
 class AssetController extends Controller
@@ -12,13 +13,7 @@ class AssetController extends Controller
 
         return response()->json([
             'usd_balance' => (float) $user->balance,
-            'assets' => $user->assets->map(function ($asset) {
-                return [
-                    'symbol' => $asset->symbol,
-                    'amount' => (float) $asset->amount,
-                    'locked_amount' => (float) $asset->locked_amount,
-                ];
-            }),
+            'assets' => AssetResource::collection($user->assets),
         ]);
     }
 }

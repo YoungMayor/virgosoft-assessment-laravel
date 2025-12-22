@@ -2,16 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Jobs\MatchOrders;
-use App\Models\Asset;
+use App\Http\Requests\StoreOrderRequest;
+use App\Http\Resources\OrderResource;
 use App\Models\Order;
-use App\Models\User;
+use App\Services\OrderService;
 use Exception;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
+    public function __construct(protected OrderService $orderService) {}
+
+    /**
+     * List all open orders.
+     * Optionally filter by symbol.
+     *
+     * @return \Illuminate\Http\Resources\Json\AnonymousResourceCollection
+     */
     public function index(Request $request)
     {
         $query = Order::where('status', 'open');
@@ -20,105 +27,38 @@ class OrderController extends Controller
             $query->where('symbol', $request->symbol);
         }
 
-        return response()->json($query->orderByDesc('created_at')->get());
+        return OrderResource::collection($query->orderByDesc('created_at')->get());
     }
 
-    public function store(Request $request)
+    /**
+     * Create a new order.
+     *
+     * @return OrderResource|\Illuminate\Http\JsonResponse
+     */
+    public function store(StoreOrderRequest $request)
     {
-        $validated = $request->validate([
-            'symbol' => 'required|string',
-            'side' => 'required|in:buy,sell',
-            'price' => 'required|numeric|gt:0',
-            'amount' => 'required|numeric|gt:0',
-        ]);
-
-        $user = $request->user();
-        $totalCost = $validated['price'] * $validated['amount'];
-        $order = null;
-
         try {
-            DB::transaction(function () use ($user, $validated, $totalCost, &$order) {
-                // Refresh user for lock
-                $user = User::lockForUpdate()->find($user->id);
+            $order = $this->orderService->createOrder($request->user(), $request->validated());
 
-                if ($validated['side'] === 'buy') {
-                    if ($user->balance < $totalCost) {
-                        throw new Exception('Insufficient USD balance.');
-                    }
-
-                    $user->balance -= $totalCost;
-                    $user->save();
-                } else {
-                    // Sell Order
-                    $asset = Asset::lockForUpdate()
-                        ->where('user_id', $user->id)
-                        ->where('symbol', $validated['symbol'])
-                        ->first();
-
-                    if (! $asset || $asset->amount < $validated['amount']) {
-                        throw new Exception('Insufficient asset balance.');
-                    }
-
-                    $asset->amount -= $validated['amount'];
-                    $asset->locked_amount += $validated['amount'];
-                    $asset->save();
-                }
-
-                $order = $user->orders()->create([
-                    'symbol' => $validated['symbol'],
-                    'side' => $validated['side'],
-                    'price' => $validated['price'],
-                    'amount' => $validated['amount'],
-                    'status' => 'open',
-                ]);
-            });
+            return new OrderResource($order);
         } catch (Exception $e) {
             return response()->json(['message' => $e->getMessage()], 400);
         }
-
-        // Trigger matching synchronously as per simple requirement, or dispatch job.
-        // For "Real-time" and "Atomic", sync is fine for MVP.
-        MatchOrders::dispatch($order);
-
-        return response()->json($order, 201);
     }
 
+    /**
+     * Cancel an order.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function destroy(string $id, Request $request)
     {
-        $order = $request->user()->orders()->where('id', $id)->firstOrFail();
+        try {
+            $this->orderService->cancelOrder($request->user(), (int) $id);
 
-        if ($order->status !== 'open') {
-            return response()->json(['message' => 'Order is not open.'], 400);
+            return response()->json(['message' => 'Order cancelled.']);
+        } catch (Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 400);
         }
-
-        DB::transaction(function () use ($order) {
-            $user = User::lockForUpdate()->find($order->user_id);
-            $order->refresh();
-            if ($order->status !== 'open') {
-                return;
-            }
-
-            if ($order->side === 'buy') {
-                $cost = $order->price * $order->amount;
-                $user->balance += $cost;
-                $user->save();
-            } else {
-                $asset = Asset::lockForUpdate()
-                    ->where('user_id', $user->id)
-                    ->where('symbol', $order->symbol)
-                    ->first();
-
-                if ($asset) {
-                    $asset->amount += $order->amount;
-                    $asset->locked_amount -= $order->amount;
-                    $asset->save();
-                }
-            }
-
-            $order->status = 'cancelled';
-            $order->save();
-        });
-
-        return response()->json(['message' => 'Order cancelled.']);
     }
 }
