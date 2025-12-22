@@ -37,12 +37,12 @@ class MatchingService
         }
     }
 
-    protected function canOrderBeMatched(Order $order): bool
+    private function canOrderBeMatched(Order $order): bool
     {
         return $order->status === OrderStatus::Open && $order->amount > 0;
     }
 
-    protected function findMatchingOrders(Order $order)
+    private function findMatchingOrders(Order $order)
     {
         $isBuy = $order->side === 'buy';
 
@@ -55,7 +55,7 @@ class MatchingService
             ->get();
     }
 
-    protected function isPriceMatch(Order $order, Order $match): bool
+    private function isPriceMatch(Order $order, Order $match): bool
     {
         $isBuy = $order->side === 'buy';
 
@@ -70,7 +70,7 @@ class MatchingService
         return true;
     }
 
-    protected function processMatch(Order $order, Order $match): void
+    private function processMatch(Order $order, Order $match): void
     {
         DB::transaction(function () use ($order, $match) {
             // Lock rows
@@ -85,12 +85,12 @@ class MatchingService
         });
     }
 
-    protected function canExecuteTrade(Order $order, Order $match): bool
+    private function canExecuteTrade(Order $order, Order $match): bool
     {
         return $order->status === OrderStatus::Open && $match->status === OrderStatus::Open;
     }
 
-    protected function executeTrade(Order $order, Order $match): void
+    private function executeTrade(Order $order, Order $match): void
     {
         $tradeAmount = (float) min($order->amount, $match->amount);
         $tradePrice = (float) $match->price;
@@ -108,7 +108,7 @@ class MatchingService
         event(new OrderMatched($order, $match, $tradeAmount, $tradePrice));
     }
 
-    protected function createTradeRecord(Order $order, Order $match, float $price, float $amount, float $fee, bool $isBuy): void
+    private function createTradeRecord(Order $order, Order $match, float $price, float $amount, float $fee, bool $isBuy): void
     {
         $buyer = $isBuy ? $order->user : $match->user;
         $seller = $isBuy ? $match->user : $order->user;
@@ -123,7 +123,7 @@ class MatchingService
         ]);
     }
 
-    protected function updateOrderAmounts(Order $order, Order $match, float $amount): void
+    private function updateOrderAmounts(Order $order, Order $match, float $amount): void
     {
         $order->amount -= $amount;
         $match->amount -= $amount;
@@ -139,7 +139,7 @@ class MatchingService
         $match->save();
     }
 
-    protected function updateBalances(Order $order, Order $match, float $tradePrice, float $tradeAmount, float $fee, bool $isBuy): void
+    private function updateBalances(Order $order, Order $match, float $tradePrice, float $tradeAmount, float $fee, bool $isBuy): void
     {
         $buyer = $isBuy ? $order->user : $match->user;
         $seller = $isBuy ? $match->user : $order->user;
@@ -157,7 +157,7 @@ class MatchingService
         $sellerUser->save();
     }
 
-    protected function updateBuyerBalance(User $buyerUser, Order $order, Order $match, float $tradePrice, float $tradeAmount, float $fee, bool $isBuy): void
+    private function updateBuyerBalance(User $buyerUser, Order $order, Order $match, float $tradePrice, float $tradeAmount, float $fee, bool $isBuy): void
     {
         $buyerLockPrice = $isBuy ? $order->price : $match->price;
         $lockedDeduction = $buyerLockPrice * $tradeAmount;
@@ -171,14 +171,14 @@ class MatchingService
         }
     }
 
-    protected function updateSellerBalance(User $sellerUser, Order $order, float $tradePrice, float $tradeAmount, float $fee): void
+    private function updateSellerBalance(User $sellerUser, Order $order, float $tradePrice, float $tradeAmount, float $fee): void
     {
         $cost = $tradePrice * $tradeAmount;
         $sellerProceeds = $cost - $fee;
         $sellerUser->balance += $sellerProceeds;
     }
 
-    protected function updateBuyerAsset(User $buyer, string $symbol, float $amount): void
+    private function updateBuyerAsset(User $buyer, string $symbol, float $amount): void
     {
         $buyerAsset = Asset::firstOrCreate(
             ['user_id' => $buyer->id, 'symbol' => $symbol],
@@ -188,7 +188,7 @@ class MatchingService
         $buyerAsset->save();
     }
 
-    protected function updateSellerAsset(User $seller, string $symbol, float $amount): void
+    private function updateSellerAsset(User $seller, string $symbol, float $amount): void
     {
         $sellerAsset = Asset::where('user_id', $seller->id)
             ->where('symbol', $symbol)

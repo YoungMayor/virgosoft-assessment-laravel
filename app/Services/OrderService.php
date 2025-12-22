@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OrderStatus;
 use App\Exceptions\ClientException;
 use App\Jobs\MatchOrders;
 use App\Models\Asset;
@@ -19,59 +20,24 @@ class OrderService
      */
     public function createOrder(User $user, array $data): Order
     {
-        $price = $data['price'];
-        $amount = $data['amount'];
-        $side = $data['side'];
-        $symbol = $data['symbol'];
+        return DB::transaction(function () use ($user, $data) {
+            $user = User::lockForUpdate()->find($user->id);
 
-        $totalCost = $price * $amount;
-        $order = null;
+            $this->validateAndDeductFunds($user, $data);
 
-        try {
-            DB::transaction(function () use ($user, $symbol, $side, $price, $amount, $totalCost, &$order) {
-                // Refresh user for lock
-                $user = User::lockForUpdate()->find($user->id);
+            $order = $user->orders()->create([
+                'symbol' => $data['symbol'],
+                'side' => $data['side'],
+                'price' => $data['price'],
+                'amount' => $data['amount'],
+                'status' => OrderStatus::Open,
+            ]);
 
-                if ($side === 'buy') {
-                    if ($user->balance < $totalCost) {
-                        throw new ClientException('Insufficient USD balance.');
-                    }
+            // Trigger matching
+            MatchOrders::dispatch($order);
 
-                    $user->balance -= $totalCost;
-                    $user->save();
-                } else {
-                    // Sell Order
-                    $asset = Asset::lockForUpdate()
-                        ->where('user_id', $user->id)
-                        ->where('symbol', $symbol)
-                        ->first();
-
-                    if (! $asset || $asset->amount < $amount) {
-                        throw new ClientException('Insufficient asset balance.');
-                    }
-
-                    $asset->amount -= $amount;
-                    $asset->locked_amount += $amount;
-                    $asset->save();
-                }
-
-                $order = $user->orders()->create([
-                    'symbol' => $symbol,
-                    'side' => $side,
-                    'price' => $price,
-                    'amount' => $amount,
-                    'status' => 'open',
-                ]);
-            });
-        } catch (Exception $e) {
-            throw $e;
-        }
-
-        // Trigger matching synchronously as per simple requirement, or dispatch job.
-        // For "Real-time" and "Atomic", sync is fine for MVP.
-        MatchOrders::dispatch($order);
-
-        return $order;
+            return $order;
+        });
     }
 
     /**
@@ -81,47 +47,100 @@ class OrderService
      */
     public function cancelOrder(User $user, int $orderId): void
     {
-        $order = $user->orders()->where('id', $orderId)->firstOrFail();
-
-        if ($order->status !== 'open') {
-            throw new ClientException('Order is not open.');
-        }
-
-        DB::transaction(function () use ($order, $user) {
-            // Lock user to ensure balance consistency
+        DB::transaction(function () use ($user, $orderId) {
             $user = User::lockForUpdate()->find($user->id);
-            // Refresh order logic within transaction?
-            // Re-fetch order to lock it?
-            // In original code: $user = User::lockForUpdate()->find($order->user_id);
-            // But here we passed $user. Let's ensure strict consistency.
+            $order = Order::lockForUpdate()->find($orderId);
 
-            // We should reload order with lock if we want to be super safe against race conditions on status
-            // BUT $order->refresh() inside transaction doesn't lock row unless we select for update.
-            $order = Order::lockForUpdate()->find($order->id);
-
-            if ($order->status !== 'open') {
-                return;
+            if (! $order || $order->user_id !== $user->id) {
+                throw new ClientException('Order not found.');
             }
 
-            if ($order->side === 'buy') {
-                $cost = $order->price * $order->amount;
-                $user->balance += $cost;
-                $user->save();
-            } else {
-                $asset = Asset::lockForUpdate()
-                    ->where('user_id', $user->id)
-                    ->where('symbol', $order->symbol)
-                    ->first();
-
-                if ($asset) {
-                    $asset->amount += $order->amount;
-                    $asset->locked_amount -= $order->amount;
-                    $asset->save();
-                }
+            if ($order->status !== OrderStatus::Open) {
+                // If already processed, we can't cancel.
+                throw new ClientException('Order is not open.');
             }
 
-            $order->status = 'cancelled';
+            $this->refundFunds($user, $order);
+
+            $order->status = OrderStatus::Cancelled;
             $order->save();
         });
+    }
+
+    private function validateAndDeductFunds(User $user, array $data): void
+    {
+        $cost = $data['price'] * $data['amount'];
+
+        if ($data['side'] === 'buy') {
+            $this->ensureSufficientBalance($user, $cost);
+            $this->deductBalance($user, $cost);
+        } else {
+            $this->ensureSufficientAsset($user, $data['symbol'], $data['amount']);
+            $this->lockAsset($user, $data['symbol'], $data['amount']);
+        }
+    }
+
+    private function refundFunds(User $user, Order $order): void
+    {
+        if ($order->side === 'buy') {
+            $cost = (float) $order->price * (float) $order->amount;
+            $this->refundBalance($user, $cost);
+        } else {
+            $this->releaseAsset($user, $order->symbol, (float) $order->amount);
+        }
+    }
+
+    private function ensureSufficientBalance(User $user, float $amount): void
+    {
+        if ((float) $user->balance < $amount) {
+            throw new ClientException('Insufficient USD balance.');
+        }
+    }
+
+    private function ensureSufficientAsset(User $user, string $symbol, float $amount): void
+    {
+        $asset = Asset::where('user_id', $user->id)
+            ->where('symbol', $symbol)
+            ->first();
+
+        if (! $asset || (float) $asset->amount < $amount) {
+            throw new ClientException('Insufficient asset balance.');
+        }
+    }
+
+    private function deductBalance(User $user, float $amount): void
+    {
+        $user->balance = (float) $user->balance - $amount;
+        $user->save();
+    }
+
+    private function lockAsset(User $user, string $symbol, float $amount): void
+    {
+        $asset = Asset::where('user_id', $user->id)
+            ->where('symbol', $symbol)
+            ->first();
+
+        $asset->amount = (float) $asset->amount - $amount;
+        $asset->locked_amount = (float) $asset->locked_amount + $amount;
+        $asset->save();
+    }
+
+    private function refundBalance(User $user, float $amount): void
+    {
+        $user->balance = (float) $user->balance + $amount;
+        $user->save();
+    }
+
+    private function releaseAsset(User $user, string $symbol, float $amount): void
+    {
+        $asset = Asset::where('user_id', $user->id)
+            ->where('symbol', $symbol)
+            ->first();
+
+        if ($asset) {
+            $asset->amount = (float) $asset->amount + $amount;
+            $asset->locked_amount = (float) $asset->locked_amount - $amount;
+            $asset->save();
+        }
     }
 }
